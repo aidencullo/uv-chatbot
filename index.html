@@ -335,7 +335,7 @@
     <div class="logo-icon">uv</div>
     <span>uv assistant</span>
   </div>
-  <button class="api-key-btn" id="api-key-btn" onclick="showModal()">Set API Key</button>
+  <button class="api-key-btn" id="api-key-btn" onclick="handleApiKeyClick()">Set API Key</button>
 </header>
 
 <div id="chat-container">
@@ -453,6 +453,13 @@ window.sendMessage = async function() {
   } catch (err) {
     contentDiv.innerHTML = `<p style="color:#f85149">Error: ${err.message}</p>`;
     conversationHistory.pop(); // remove failed user message
+    // Re-prompt for API key on auth errors
+    if (err.message.includes('401') || err.message.includes('invalid') || err.message.includes('authentication') || err.message.includes('Invalid API Key')) {
+      localStorage.removeItem('uv-chatbot-api-key');
+      document.getElementById('api-key-btn').textContent = 'Set API Key';
+      document.getElementById('api-key-btn').classList.remove('set');
+      setTimeout(() => window.showModal(), 500);
+    }
   }
 
   isStreaming = false;
@@ -518,6 +525,7 @@ window.askSuggestion = function(el) {
 };
 
 window.showModal = function() {
+  document.getElementById('api-key-input').value = '';
   document.getElementById('modal').classList.remove('hidden');
   document.getElementById('api-key-input').focus();
 };
@@ -534,6 +542,21 @@ window.saveApiKey = function() {
     document.getElementById('api-key-btn').classList.add('set');
   }
   window.hideModal();
+};
+
+window.handleApiKeyClick = function() {
+  if (localStorage.getItem('uv-chatbot-api-key')) {
+    window.resetApiKey();
+  } else {
+    window.showModal();
+  }
+};
+
+window.resetApiKey = function() {
+  localStorage.removeItem('uv-chatbot-api-key');
+  document.getElementById('api-key-btn').textContent = 'Set API Key';
+  document.getElementById('api-key-btn').classList.remove('set');
+  window.showModal();
 };
 
 // Check for existing key on load
