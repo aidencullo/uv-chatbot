@@ -363,8 +363,8 @@
 <div class="modal-overlay hidden" id="modal">
   <div class="modal">
     <h3>Anthropic API Key</h3>
-    <p>Enter your Anthropic API key to power the chatbot. Your key is stored locally in your browser and never sent anywhere except the Anthropic API.</p>
-    <input type="password" id="api-key-input" placeholder="sk-ant-..." />
+    <p>Enter your Anthropic API key or setup token. Stored locally in your browser and only sent to the Anthropic API.</p>
+    <input type="password" id="api-key-input" placeholder="API key or setup token..." />
     <div class="modal-actions">
       <button class="btn-cancel" onclick="hideModal()">Cancel</button>
       <button class="btn-save" onclick="saveApiKey()">Save</button>
@@ -399,6 +399,24 @@ const welcome = document.getElementById('welcome');
 let conversationHistory = [];
 let isStreaming = false;
 
+async function callApi(token, body, method) {
+  const headers = {
+    'Content-Type': 'application/json',
+    'anthropic-version': '2023-06-01',
+    'anthropic-dangerous-direct-browser-access': 'true',
+  };
+  if (method === 'bearer') {
+    headers['Authorization'] = `Bearer ${token}`;
+  } else {
+    headers['x-api-key'] = token;
+  }
+  return fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers,
+    body,
+  });
+}
+
 window.sendMessage = async function() {
   const text = userInput.value.trim();
   if (!text || isStreaming) return;
@@ -424,21 +442,31 @@ window.sendMessage = async function() {
   contentDiv.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 4096,
-        system: SYSTEM_PROMPT,
-        messages: conversationHistory,
-      }),
+    const requestBody = JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4096,
+      system: SYSTEM_PROMPT,
+      messages: conversationHistory,
     });
+
+    // Determine auth method based on stored preference or token format
+    let authMethod = localStorage.getItem('uv-chatbot-auth-method');
+    if (!authMethod) {
+      authMethod = apiKey.startsWith('sk-ant-') ? 'api-key' : 'bearer';
+    }
+
+    let response = await callApi(apiKey, requestBody, authMethod);
+
+    // If first method fails with 401, try the other
+    if (response.status === 401) {
+      const altMethod = authMethod === 'api-key' ? 'bearer' : 'api-key';
+      response = await callApi(apiKey, requestBody, altMethod);
+      if (response.ok) {
+        localStorage.setItem('uv-chatbot-auth-method', altMethod);
+      }
+    } else if (response.ok) {
+      localStorage.setItem('uv-chatbot-auth-method', authMethod);
+    }
 
     if (!response.ok) {
       const err = await response.json();
@@ -554,6 +582,7 @@ window.handleApiKeyClick = function() {
 
 window.resetApiKey = function() {
   localStorage.removeItem('uv-chatbot-api-key');
+  localStorage.removeItem('uv-chatbot-auth-method');
   document.getElementById('api-key-btn').textContent = 'Set API Key';
   document.getElementById('api-key-btn').classList.remove('set');
   window.showModal();
